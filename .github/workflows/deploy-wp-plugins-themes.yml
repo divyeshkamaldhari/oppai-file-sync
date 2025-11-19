@@ -17,6 +17,10 @@ jobs:
       PORT_SECRET: ${{ secrets.HOSTINGER_SSH_PORT }}
 
       # --- Hard-coded remote paths (replace with your actual absolute paths) ---
+      HOST: 109.106.254.234
+      USER: u689060721
+      KEY_B64: ${{ secrets.HOSTINGER_SSH_KEY }}
+      PORT_SECRET: "65002"
       PLUGINS_PATH: /home/u689060721/domains/lightsteelblue-dolphin-977863.hostingersite.com/public_html/wp-content/plugins
       THEMES_PATH:  /home/u689060721/domains/lightsteelblue-dolphin-977863.hostingersite.com/public_html/wp-content/themes
       # ----------------------------------------------------------------------------
