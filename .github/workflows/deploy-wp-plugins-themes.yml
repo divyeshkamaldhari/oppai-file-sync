@@ -11,10 +11,10 @@ jobs:
 
     env:
       # required secrets (still keep these as secrets in repo settings)
-      HOST: ${{ secrets.HOSTINGER_HOST }}
-      USER: ${{ secrets.HOSTINGER_USER }}
-      KEY_B64: ${{ secrets.HOSTINGER_SSH_KEY }}
-      PORT_SECRET: ${{ secrets.HOSTINGER_SSH_PORT }}
+      # HOST: ${{ secrets.HOSTINGER_HOST }}
+      # USER: ${{ secrets.HOSTINGER_USER }}
+      # KEY_B64: ${{ secrets.HOSTINGER_SSH_KEY }}
+      # PORT_SECRET: ${{ secrets.HOSTINGER_SSH_PORT }}
 
       # --- Hard-coded remote paths (replace with your actual absolute paths) ---
       HOST: 109.106.254.234
