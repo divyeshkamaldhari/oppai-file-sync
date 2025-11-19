@@ -63,7 +63,6 @@ jobs:
             # adjust user/group if different (www-data/nginx/apache)
             chown -R u689060721:u689060721 /home/u689060721/domains/lightsteelblue-dolphin-977863.hostingersite.com/public_html/wp-content/plugins || true
             chown -R u689060721:u689060721 /home/u689060721/domains/lightsteelblue-dolphin-977863.hostingersite.com/public_html/wp-content/themes || true
-
             # if WP-CLI is available, flush cache (optional)
             if command -v wp >/dev/null 2>&1; then
               wp cache flush --path=/home/u689060721/domains/lightsteelblue-dolphin-977863.hostingersite.com/public_html --allow-root || true
