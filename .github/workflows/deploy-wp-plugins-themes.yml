@@ -9,7 +9,7 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    environment: Staging
+    environment: staging 
     env:
       REMOTE_HOST: ${{ secrets.HOSTINGER_HOST }}
       REMOTE_USER: ${{ secrets.HOSTINGER_USER }}
