@@ -1,4 +1,4 @@
-name: Deploy WP plugins & themes to Hostinger
+name: Deploy WP plugins & themes to Hostinger (rsync action)
 
 on:
   push:
@@ -9,62 +9,37 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout repo
+      - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Install rsync
-        run: sudo apt-get update && sudo apt-get install -y rsync
-
-      - name: Setup SSH key
-        uses: webfactory/ssh-agent@v0.8.1
+      - name: Deploy plugins
+        uses: burnett01/rsync-deployments@v4
         with:
-          ssh-private-key: ${{ secrets.HOSTINGER_SSH_KEY }}
+          switches: -avz --delete --exclude='.git' --exclude='node_modules' --exclude='wp-config.php' --exclude='wp-content/uploads'
+          path: ./wp-content/plugins/
+          remote_host: ${{ secrets.HOSTINGER_HOST }}
+          remote_user: ${{ secrets.HOSTINGER_USER }}
+          remote_key: ${{ secrets.HOSTINGER_SSH_KEY }}
+          remote_path: ${{ secrets.TARGET_PLUGINS_PATH }}
 
-      - name: Add host to known_hosts
+      - name: Deploy themes
+        uses: burnett01/rsync-deployments@v4
+        with:
+          switches: -avz --delete --exclude='.git' --exclude='node_modules' --exclude='wp-config.php' --exclude='wp-content/uploads'
+          path: ./wp-content/themes/
+          remote_host: ${{ secrets.HOSTINGER_HOST }}
+          remote_user: ${{ secrets.HOSTINGER_USER }}
+          remote_key: ${{ secrets.HOSTINGER_SSH_KEY }}
+          remote_path: ${{ secrets.TARGET_THEMES_PATH }}
+
+      - name: Fix ownership & flush cache (optional)
         run: |
-          mkdir -p ~/.ssh
-          ssh-keyscan -H "${{ secrets.HOSTINGER_HOST }}" >> ~/.ssh/known_hosts
-          chmod 644 ~/.ssh/known_hosts
+          ssh -o StrictHostKeyChecking=no ${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }} "chown -R u689060721:u689060721 ${{ secrets.TARGET_PLUGINS_PATH }} || true; chown -R u689060721:u689060721 ${{ secrets.TARGET_THEMES_PATH }} || true; if command -v wp >/dev/null 2>&1; then wp cache flush --path=/home/u689060721/domains/lightsteelblue-dolphin-977863.hostingersite.com/public_html --allow-root || true; fi"
+        env:
+          SSH_AUTH_SOCK: /tmp/ssh_agent.sock
 
-      - name: Ensure remote paths exist
-        run: |
-          ssh -o StrictHostKeyChecking=no ${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }} "mkdir -p '${{ secrets.TARGET_PLUGINS_PATH }}' '${{ secrets.TARGET_THEMES_PATH }}'"
-
-      - name: Rsync plugins folder to Hostinger
-        run: |
-          echo "Deploying plugins..."
-          rsync -avz --delete \
-            --exclude '.git' \
-            --exclude 'node_modules' \
-            --exclude 'wp-config.php' \
-            --exclude 'wp-content/uploads' \
-            ./wp-content/plugins/ \
-            ${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}:${{ secrets.TARGET_PLUGINS_PATH }}/
-
-      - name: Rsync themes folder to Hostinger
-        run: |
-          echo "Deploying themes..."
-          rsync -avz --delete \
-            --exclude '.git' \
-            --exclude 'node_modules' \
-            --exclude 'wp-config.php' \
-            --exclude 'wp-content/uploads' \
-            ./wp-content/themes/ \
-            ${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}:${{ secrets.TARGET_THEMES_PATH }}/
-
-      - name: Set ownership & clear cache (optional)
-        run: |
-          ssh -o StrictHostKeyChecking=no ${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }} <<'SSH_CMDS'
-chown -R u689060721:u689060721 /home/u689060721/domains/lightsteelblue-dolphin-977863.hostingersite.com/public_html/wp-content/plugins || true
-chown -R u689060721:u689060721 /home/u689060721/domains/lightsteelblue-dolphin-977863.hostingersite.com/public_html/wp-content/themes || true
-if command -v wp >/dev/null 2>&1; then
-  wp cache flush --path=/home/u689060721/domains/lightsteelblue-dolphin-977863.hostingersite.com/public_html --allow-root || true
-fi
-SSH_CMDS
-
-      - name: Success Notification
-        run: echo "Deployment finished."
+      - name: Success
+        run: echo "Deploy finished"
