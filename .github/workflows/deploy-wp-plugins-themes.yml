@@ -1,127 +1,76 @@
-name: Deploy WP plugins & themes to Hostinger (dry-run by default, live via input)
+name: Deploy WP plugins & themes to Hostinger (rsync via SSH - dry run)
 
 on:
   push:
     branches:
       - staging
   workflow_dispatch:
-    inputs:
-      live:
-        description: 'Set to "true" to perform real deploy (dangerous). Default=false'
-        required: false
-        default: 'false'
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    environment: staging 
     env:
-      REMOTE_HOST: ${{ secrets.HOSTINGER_HOST }}
+      REMOTE_HOST: ${{ secrets.HOSTINGER_HOST }} 
       REMOTE_USER: ${{ secrets.HOSTINGER_USER }}
       REMOTE_PLUGINS_PATH: ${{ secrets.TARGET_PLUGINS_PATH }}
       REMOTE_THEMES_PATH: ${{ secrets.TARGET_THEMES_PATH }}
+    runs: |
+      echo "HOSTINGER_HOST"
+      echo "HOSTINGER_USER"
+      echo "TARGET_PLUGINS_PATH"
+      echo "TARGET_THEMES_PATH"
+      
 
     steps:
-      - name: Checkout
+      - name: Checkout repo
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Install dependencies
-        run: sudo apt-get update && sudo apt-get install -y rsync openssh-client coreutils
+      - name: Install deps
+        run: sudo apt-get update && sudo apt-get install -y rsync openssh-client
 
-      - name: Debug: ensure required secrets exist and print safe metadata
+      - name: Configure SSH key (decode base64) and start ssh-agent
         run: |
-          echo "Checking secrets availability..."
-          if [ -z "${{ secrets.HOSTINGER_SSH_KEY_B64 }}" ]; then
-            echo "ERROR: secret HOSTINGER_SSH_KEY_B64 is missing or empty"
-            exit 1
-          fi
-          if [ -z "${{ secrets.HOSTINGER_HOST }}" ]; then
-            echo "ERROR: secret HOSTINGER_HOST is missing or empty"
-            exit 1
-          fi
-          if [ -z "${{ secrets.HOSTINGER_USER }}" ]; then
-            echo "ERROR: secret HOSTINGER_USER is missing or empty"
-            exit 1
-          fi
-          echo "HOSTINGER_HOST=${{ secrets.HOSTINGER_HOST }}"
-          echo "HOSTINGER_USER=${{ secrets.HOSTINGER_USER }}"
-          # Print small safe metadata about the base64 secret (length + hash)
-          printf '%s' "${{ secrets.HOSTINGER_SSH_KEY_B64 }}" | wc -c | awk '{print "HOSTINGER_SSH_KEY_B64_length_bytes:", $1}'
-          printf '%s' "${{ secrets.HOSTINGER_SSH_KEY_B64 }}" | sha256sum | awk '{print "HOSTINGER_SSH_KEY_B64_sha256:", $1}'
-        shell: bash
-
-      - name: Configure SSH key (decode base64 -> id_rsa) and start ssh-agent
-        run: |
-          set -euo pipefail
+          set -e
           mkdir -p ~/.ssh
-          # Decode secret into private key file (do not print it)
-          printf '%s' "${{ secrets.HOSTINGER_SSH_KEY_B64 }}" | base64 --decode > ~/.ssh/id_rsa
+          # decode base64 secret into private key file
+          echo "${{ secrets.HOSTINGER_SSH_KEY_B64 }}" | base64 --decode > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
-          # start ssh-agent and add the key
+          # start ssh-agent and add key
           eval "$(ssh-agent -s)"
           ssh-add ~/.ssh/id_rsa
-          # Add host fingerprint so SSH is non-interactive
-          ssh-keyscan -H "$REMOTE_HOST" >> ~/.ssh/known_hosts || true
-          echo "SSH key loaded and known_hosts updated."
-        shell: bash
-
-      - name: Inspect decoded key (safe checks)
-        run: |
-          echo "Decoded key file size: $(stat -c%s ~/.ssh/id_rsa) bytes"
-          echo "Decoded key first line (header):"
-          head -n 1 ~/.ssh/id_rsa || true
-          echo "file type info:"
-          file ~/.ssh/id_rsa || true
-        shell: bash
+          # add host fingerprint so SSH is non-interactive
+          ssh-keyscan -H "$REMOTE_HOST" >> ~/.ssh/known_hosts
+        # no env block needed because we use repository secrets directly
 
       - name: Ensure remote target directories exist
         run: |
-          ssh -o StrictHostKeyChecking=no $REMOTE_USER@$REMOTE_HOST "mkdir -p '${REMOTE_PLUGINS_PATH}' '${REMOTE_THEMES_PATH}' && echo 'remote paths ensured'"
-        shell: bash
+          ssh -o StrictHostKeyChecking=no $REMOTE_USER@$REMOTE_HOST "mkdir -p '${REMOTE_PLUGINS_PATH}' '${REMOTE_THEMES_PATH}'"
 
-      - name: Perform rsync (plugins & themes) - dry-run or real depending on input
+      - name: Rsync plugins folder (DRY-RUN)
         run: |
-          # Determine whether to run dry-run or live
-          if [ "${{ github.event.inputs.live }}" = "true" ]; then
-            echo "Running REAL deploy (live=true)."
-            DRY_FLAG=""
-          else
-            echo "Running DRY-RUN (default). To do a real deploy set workflow_dispatch input live=true."
-            DRY_FLAG="--dry-run"
-          fi
+          echo "---- DRY RUN: Plugins ----"
+          rsync -avz --delete --dry-run \
+            --exclude='.git' \
+            --exclude='node_modules' \
+            --exclude='wp-config.php' \
+            --exclude='wp-content/uploads' \
+            ./wp-content/plugins/ \
+            "$REMOTE_USER@$REMOTE_HOST:$REMOTE_PLUGINS_PATH/"
 
-          RSYNC_COMMON="-avz --delete ${DRY_FLAG} --exclude='.git' --exclude='node_modules' --exclude='wp-config.php' --exclude='wp-content/uploads'"
-
-          echo "==== RSYNC plugins ===="
-          rsync $RSYNC_COMMON ./wp-content/plugins/ "${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_PLUGINS_PATH}/"
-
-          echo "==== RSYNC themes ===="
-          rsync $RSYNC_COMMON ./wp-content/themes/ "${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_THEMES_PATH}/"
-
-          echo "Rsync commands completed (check above output for file lists)."
-        shell: bash
-
-      - name: Post-deploy tasks (permissions & cache flush) - only on live
-        if: ${{ github.event.inputs.live == 'true' }}
+      - name: Rsync themes folder (DRY-RUN)
         run: |
-          echo "Running post-deploy commands on remote (permissions & cache flush)..."
-          ssh -o StrictHostKeyChecking=no $REMOTE_USER@$REMOTE_HOST <<'REMOTE_CMDS'
-            # adjust these commands for your host (user/group)
-            chown -R u689060721:u689060721 "${REMOTE_PLUGINS_PATH}" || true
-            chown -R u689060721:u689060721 "${REMOTE_THEMES_PATH}" || true
-            if command -v wp >/dev/null 2>&1; then
-              wp cache flush --path=/home/u689060721/domains/lightsteelblue-dolphin-977863.hostingersite.com/public_html --allow-root || true
-            fi
-            echo "Post-deploy remote tasks finished."
-REMOTE_CMDS
-        shell: bash
+          echo "---- DRY RUN: Themes ----"
+          rsync -avz --delete --dry-run \
+            --exclude='.git' \
+            --exclude='node_modules' \
+            --exclude='wp-config.php' \
+            --exclude='wp-content/uploads' \
+            ./wp-content/themes/ \
+            "$REMOTE_USER@$REMOTE_HOST:$REMOTE_THEMES_PATH/"
 
-      - name: Success
+      - name: Post-deploy (permissions & cache flush) - DRY-RUN placeholder
         run: |
-          if [ "${{ github.event.inputs.live }}" = "true" ]; then
-            echo "LIVE deployment finished successfully."
-          else
-            echo "Dry-run finished. If output looks correct, re-run with live=true to perform the real deploy."
-          fi
-        shell: bash
+          echo "Dry-run completed. If output looks correct, remove --dry-run flags and re-run to perform actual deploy."
