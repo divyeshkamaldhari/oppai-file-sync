@@ -1,4 +1,4 @@
-name: Deploy WP plugins & themes to Hostinger (rsync via SSH)
+name: Deploy WP plugins & themes to Hostinger (rsync via SSH - dry run)
 
 on:
   push:
@@ -9,6 +9,11 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    env:
+      REMOTE_HOST: ${{ secrets.HOSTINGER_HOST }}
+      REMOTE_USER: ${{ secrets.HOSTINGER_USER }}
+      REMOTE_PLUGINS_PATH: ${{ secrets.TARGET_PLUGINS_PATH }}
+      REMOTE_THEMES_PATH: ${{ secrets.TARGET_THEMES_PATH }}
 
     steps:
       - name: Checkout repo
@@ -16,24 +21,28 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Install rsync (if missing)
+      - name: Install deps
         run: sudo apt-get update && sudo apt-get install -y rsync openssh-client
 
-      - name: Start ssh-agent and add key
-        uses: webfactory/ssh-agent@v0.8.1
-        with:
-          ssh-private-key: ${{ secrets.HOSTINGER_SSH_KEY }}
-
-      - name: Add host to known_hosts
+      - name: Configure SSH key and ssh-agent (no external action)
         run: |
+          set -e
           mkdir -p ~/.ssh
-          ssh-keyscan -H "${{ secrets.HOSTINGER_HOST }}" >> ~/.ssh/known_hosts
-          chmod 644 ~/.ssh/known_hosts
+          # write private key from secret into id_rsa
+          echo "$SSH_KEY" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          # start ssh-agent and add key
+          eval "$(ssh-agent -s)"
+          ssh-add ~/.ssh/id_rsa
+          # add known host so ssh won't prompt
+          ssh-keyscan -H "$REMOTE_HOST" >> ~/.ssh/known_hosts
+        env:
+          SSH_KEY: ${{ secrets.HOSTINGER_SSH_KEY }}
 
       - name: Ensure remote target directories exist
         run: |
-          ssh -o StrictHostKeyChecking=no ${ { secrets.HOSTINGER_USER } }@${{ secrets.HOSTINGER_HOST }} "mkdir -p '${{ secrets.TARGET_PLUGINS_PATH }}' '${{ secrets.TARGET_THEMES_PATH }}'"
-
+          ssh -o StrictHostKeyChecking=no $REMOTE_USER@$REMOTE_HOST "mkdir -p '${REMOTE_PLUGINS_PATH}' '${REMOTE_THEMES_PATH}'"
+      
       - name: Rsync plugins folder (DRY-RUN)
         run: |
           echo "---- DRY RUN: Plugins ----"
@@ -43,7 +52,7 @@ jobs:
             --exclude='wp-config.php' \
             --exclude='wp-content/uploads' \
             ./wp-content/plugins/ \
-            "${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}:${{ secrets.TARGET_PLUGINS_PATH }}/"
+            "$REMOTE_USER@$REMOTE_HOST:$REMOTE_PLUGINS_PATH/"
 
       - name: Rsync themes folder (DRY-RUN)
         run: |
@@ -54,9 +63,8 @@ jobs:
             --exclude='wp-config.php' \
             --exclude='wp-content/uploads' \
             ./wp-content/themes/ \
-            "${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}:${{ secrets.TARGET_THEMES_PATH }}/"
+            "$REMOTE_USER@$REMOTE_HOST:$REMOTE_THEMES_PATH/"
 
-      - name: Confirm and run real deploy (manual step)
-        if: ${{ github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/staging' }}
+      - name: Post-deploy (permissions & cache flush) - DRY-RUN placeholder
         run: |
-          echo "If the dry-run output looks good, re-run this workflow with the '--live' input or edit this file and remove --dry-run."
+          echo "Dry-run completed. If output looks correct, remove --dry-run flags and re-run to perform actual deploy."
