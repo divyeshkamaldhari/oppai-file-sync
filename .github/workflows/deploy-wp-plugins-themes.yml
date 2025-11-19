@@ -1,4 +1,4 @@
-name: Deploy WP plugins & themes to Hostinger (staging)
+name: Deploy WP plugins & themes to Hostinger (staging - fixed remote paths)
 
 on:
   push:
@@ -10,14 +10,16 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
+      # required secrets (still keep these as secrets in repo settings)
       HOST: ${{ secrets.HOSTINGER_HOST }}
       USER: ${{ secrets.HOSTINGER_USER }}
-      PLUGINS_PATH: ${{ secrets.TARGET_PLUGINS_PATH }}
-      THEMES_PATH: ${{ secrets.TARGET_THEMES_PATH }}
-      PLUGINS_PATH: /home/u689060721/domains/lightsteelblue-dolphin-977863.hostingersite.com/public_html/wp-content/plugins
-      THEMES_PATH: /home/u689060721/domains/lightsteelblue-dolphin-977863.hostingersite.com/public_html/wp-content/themes
       KEY_B64: ${{ secrets.HOSTINGER_SSH_KEY_B64 }}
       PORT_SECRET: ${{ secrets.HOSTINGER_SSH_PORT }}
+
+      # --- Hard-coded remote paths (replace with your actual absolute paths) ---
+      PLUGINS_PATH: /home/u689060721/domains/lightsteelblue-dolphin-977863.hostingersite.com/public_html/wp-content/plugins
+      THEMES_PATH:  /home/u689060721/domains/lightsteelblue-dolphin-977863.hostingersite.com/public_html/wp-content/themes
+      # ----------------------------------------------------------------------------
 
     steps:
       - name: Checkout repository
@@ -51,10 +53,7 @@ jobs:
             echo "ERROR: HOSTINGER_USER missing - add repo secret"
             exit 1
           fi
-          if [ -z "$PLUGINS_PATH" ] || [ -z "$THEMES_PATH" ]; then
-            echo "ERROR: TARGET_PLUGINS_PATH and/or TARGET_THEMES_PATH missing"
-            exit 1
-          fi
+          # PLUGINS_PATH and THEMES_PATH are hard-coded above in env, so no secret required
           # default port
           PORT="${PORT_SECRET:-65002}"
           echo "SSH port set to: $PORT"
@@ -67,6 +66,11 @@ jobs:
           mkdir -p ~/.ssh
           # sanitize/strip CRs then decode
           CLEAN_B64=$(printf '%s' "$KEY_B64" | tr -d '\r')
+          # validate basic base64 characters
+          if ! printf '%s' "$CLEAN_B64" | grep -Eq '^[A-Za-z0-9+/]+={0,2}$'; then
+            echo "ERROR: HOSTINGER_SSH_KEY_B64 is not valid base64. Recreate with: cat id_rsa | base64 | tr -d '\n'"
+            exit 1
+          fi
           printf '%s' "$CLEAN_B64" | base64 --decode > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
           eval "$(ssh-agent -s)"
