@@ -1,69 +1,35 @@
-name: Deploy WP plugins & themes to Hostinger (dry-run by default)
+name: Echo Hostinger Variables (staging-only)
 
 on:
   push:
-    branches: [staging]
+    branches:
+      - staging
+  # optional: allow manual runs (remove if you want strictly push-only)
   workflow_dispatch:
-    inputs:
-      live:
-        description: 'Set to "true" to perform real deploy'
-        required: false
-        default: 'false'
 
 jobs:
-  deploy:
+  show-vars:
     runs-on: ubuntu-latest
 
-    env:
-      HOST: ${{ secrets.HOSTINGER_HOST }}
-      USER: ${{ secrets.HOSTINGER_USER }}
-      PLUGINS_PATH: ${{ secrets.TARGET_PLUGINS_PATH }}
-      THEMES_PATH: ${{ secrets.TARGET_THEMES_PATH }}
-      KEY_B64: ${{ secrets.HOSTINGER_SSH_KEY_B64 }}
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-      - name: Install deps
-        run: sudo apt-get update && sudo apt-get install -y rsync openssh-client coreutils
-
-      - name: Validate secrets present
+      - name: Confirm branch (safety)
         run: |
-          if [ -z "$KEY_B64" ]; then echo "ERROR: HOSTINGER_SSH_KEY_B64 missing"; exit 1; fi
-          if [ -z "$HOST" ]; then echo "ERROR: HOSTINGER_HOST missing"; exit 1; fi
-          if [ -z "$USER" ]; then echo "ERROR: HOSTINGER_USER missing"; exit 1; fi
-          echo "Secrets look present (values masked)."
+          echo "GITHUB_REF = $GITHUB_REF"
+          echo "Running on branch: ${GITHUB_REF#refs/heads/}"
+        # extra guard: stop if not staging (shouldn't be necessary, but safe)
+        if: startsWith(github.ref, 'refs/heads/staging')
 
-      - name: Write key and load ssh-agent
+      - name: Echo repo variables
         run: |
-          mkdir -p ~/.ssh
-          printf '%s' "$KEY_B64" | base64 --decode > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-          eval "$(ssh-agent -s)"
-          ssh-add ~/.ssh/id_rsa
-          ssh-keyscan -H "$HOST" >> ~/.ssh/known_hosts || true
-
-      - name: Ensure remote dirs
-        run: ssh -o StrictHostKeyChecking=no "$USER@$HOST" "mkdir -p '$PLUGINS_PATH' '$THEMES_PATH'"
-
-      - name: Rsync plugins
-        run: |
-          DRY_FLAG="--dry-run"
-          if [ "${{ github.event.inputs.live }}" = "true" ]; then DRY_FLAG=""; fi
-          rsync -avz --delete $DRY_FLAG --exclude='.git' --exclude='node_modules' --exclude='wp-config.php' --exclude='wp-content/uploads' ./wp-content/plugins/ "$USER@$HOST:$PLUGINS_PATH/"
-
-      - name: Rsync themes
-        run: |
-          DRY_FLAG="--dry-run"
-          if [ "${{ github.event.inputs.live }}" = "true" ]; then DRY_FLAG=""; fi
-          rsync -avz --delete $DRY_FLAG --exclude='.git' --exclude='node_modules' --exclude='wp-config.php' --exclude='wp-content/uploads' ./wp-content/themes/ "$USER@$HOST:$THEMES_PATH/"
-
-      - name: Post-deploy (permissions) -- only on live
-        if: ${{ github.event.inputs.live == 'true' }}
-        run: |
-          ssh -o StrictHostKeyChecking=no "$USER@$HOST" "chown -R u689060721:u689060721 '$PLUGINS_PATH' '$THEMES_PATH' || true; if command -v wp >/dev/null 2>&1; then wp cache flush --path=/home/u689060721/domains/lightsteelblue-dolphin-977863.hostingersite.com/public_html --allow-root || true; fi"
-
-      - name: Finish
-        run: |
-          if [ "${{ github.event.inputs.live }}" = "true" ]; then echo "LIVE deploy finished"; else echo "DRY-RUN finished"; fi
+          echo "HOSTINGER_HOST: ${{ vars.HOSTINGER_HOST }}"
+          # If HOSTINGER_SSH_KEY_B64 is stored as a secret, use secrets instead:
+          # echo "HOSTINGER_SSH_KEY_B64: ${{ secrets.HOSTINGER_SSH_KEY_B64 }}"
+          echo "HOSTINGER_SSH_KEY_B64 is present (masked if secret)."
+        env:
+          # If you stored the key as a secret, uncomment the next line and comment the vars line above
+          # HOSTINGER_SSH_KEY_B64: ${{ secrets.HOSTINGER_SSH_KEY_B64 }}
+          HOSTINGER_HOST: ${{ vars.HOSTINGER_HOST }}
+          HOSTINGER_SSH_KEY_B64: ${{ vars.HOSTINGER_SSH_KEY_B64 }}

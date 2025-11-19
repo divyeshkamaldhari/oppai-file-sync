@@ -1,0 +1,69 @@
+name: Deploy WP plugins & themes to Hostinger (dry-run by default)
+
+on:
+  push:
+    branches: [staging]
+  workflow_dispatch:
+    inputs:
+      live:
+        description: 'Set to "true" to perform real deploy'
+        required: false
+        default: 'false'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    env:
+      HOST: ${{ secrets.HOSTINGER_HOST }}
+      USER: ${{ secrets.HOSTINGER_USER }}
+      PLUGINS_PATH: ${{ secrets.TARGET_PLUGINS_PATH }}
+      THEMES_PATH: ${{ secrets.TARGET_THEMES_PATH }}
+      KEY_B64: ${{ secrets.HOSTINGER_SSH_KEY_B64 }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install deps
+        run: sudo apt-get update && sudo apt-get install -y rsync openssh-client coreutils
+
+      - name: Validate secrets present
+        run: |
+          if [ -z "$KEY_B64" ]; then echo "ERROR: HOSTINGER_SSH_KEY_B64 missing"; exit 1; fi
+          if [ -z "$HOST" ]; then echo "ERROR: HOSTINGER_HOST missing"; exit 1; fi
+          if [ -z "$USER" ]; then echo "ERROR: HOSTINGER_USER missing"; exit 1; fi
+          echo "Secrets look present (values masked)."
+
+      - name: Write key and load ssh-agent
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s' "$KEY_B64" | base64 --decode > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          eval "$(ssh-agent -s)"
+          ssh-add ~/.ssh/id_rsa
+          ssh-keyscan -H "$HOST" >> ~/.ssh/known_hosts || true
+
+      - name: Ensure remote dirs
+        run: ssh -o StrictHostKeyChecking=no "$USER@$HOST" "mkdir -p '$PLUGINS_PATH' '$THEMES_PATH'"
+
+      - name: Rsync plugins
+        run: |
+          DRY_FLAG="--dry-run"
+          if [ "${{ github.event.inputs.live }}" = "true" ]; then DRY_FLAG=""; fi
+          rsync -avz --delete $DRY_FLAG --exclude='.git' --exclude='node_modules' --exclude='wp-config.php' --exclude='wp-content/uploads' ./wp-content/plugins/ "$USER@$HOST:$PLUGINS_PATH/"
+
+      - name: Rsync themes
+        run: |
+          DRY_FLAG="--dry-run"
+          if [ "${{ github.event.inputs.live }}" = "true" ]; then DRY_FLAG=""; fi
+          rsync -avz --delete $DRY_FLAG --exclude='.git' --exclude='node_modules' --exclude='wp-config.php' --exclude='wp-content/uploads' ./wp-content/themes/ "$USER@$HOST:$THEMES_PATH/"
+
+      - name: Post-deploy (permissions) -- only on live
+        if: ${{ github.event.inputs.live == 'true' }}
+        run: |
+          ssh -o StrictHostKeyChecking=no "$USER@$HOST" "chown -R u689060721:u689060721 '$PLUGINS_PATH' '$THEMES_PATH' || true; if command -v wp >/dev/null 2>&1; then wp cache flush --path=/home/u689060721/domains/lightsteelblue-dolphin-977863.hostingersite.com/public_html --allow-root || true; fi"
+
+      - name: Finish
+        run: |
+          if [ "${{ github.event.inputs.live }}" = "true" ]; then echo "LIVE deploy finished"; else echo "DRY-RUN finished"; fi
