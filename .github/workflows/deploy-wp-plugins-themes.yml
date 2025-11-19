@@ -33,3 +33,4 @@ jobs:
           # HOSTINGER_SSH_KEY_B64: ${{ secrets.HOSTINGER_SSH_KEY_B64 }}
           HOSTINGER_HOST: ${{ vars.HOSTINGER_HOST }}
           HOSTINGER_SSH_KEY_B64: ${{ vars.HOSTINGER_SSH_KEY_B64 }}
+          HOSTINGER_SSH_KEY: ${{ vars.HOSTINGER_SSH_KEY }}
