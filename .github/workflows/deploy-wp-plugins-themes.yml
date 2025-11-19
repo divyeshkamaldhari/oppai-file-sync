@@ -9,6 +9,7 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    environment: Staging
     env:
       REMOTE_HOST: ${{ secrets.HOSTINGER_HOST }}
       REMOTE_USER: ${{ secrets.HOSTINGER_USER }}
@@ -18,39 +19,25 @@ jobs:
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Install dependencies
+      - name: Install deps
         run: sudo apt-get update && sudo apt-get install -y rsync openssh-client
-
-      - name: Debug: ensure required secrets exist
-        run: |
-          echo "Checking secrets..."
-          if [ -z "${{ secrets.HOSTINGER_SSH_KEY_B64 }}" ]; then
-            echo "ERROR: HOSTINGER_SSH_KEY_B64 is missing or empty"
-            exit 1
-          fi
-          if [ -z "${{ secrets.HOSTINGER_HOST }}" ]; then
-            echo "ERROR: HOSTINGER_HOST is missing or empty"
-            exit 1
-          fi
-          if [ -z "${{ secrets.HOSTINGER_USER }}" ]; then
-            echo "ERROR: HOSTINGER_USER is missing or empty"
-            exit 1
-          fi
-          echo "Secrets OK."
 
       - name: Configure SSH key (decode base64) and start ssh-agent
         run: |
           set -e
           mkdir -p ~/.ssh
-          # Decode base64 secret into private key
+          # decode base64 secret into private key file
           echo "${{ secrets.HOSTINGER_SSH_KEY_B64 }}" | base64 --decode > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
-          # Start ssh-agent and add key
+          # start ssh-agent and add key
           eval "$(ssh-agent -s)"
           ssh-add ~/.ssh/id_rsa
-          # Add host fingerprint to known_hosts to avoid prompts
+          # add host fingerprint so SSH is non-interactive
           ssh-keyscan -H "$REMOTE_HOST" >> ~/.ssh/known_hosts
+        # no env block needed because we use repository secrets directly
 
       - name: Ensure remote target directories exist
         run: |
@@ -78,5 +65,6 @@ jobs:
             ./wp-content/themes/ \
             "$REMOTE_USER@$REMOTE_HOST:$REMOTE_THEMES_PATH/"
 
-      - name: Post-deploy (DRY-RUN)
-        run: echo "Dry-run finished. If output looks correct, remove --dry-run flags from rsync commands and re-run for a real deploy."
+      - name: Post-deploy (permissions & cache flush) - DRY-RUN placeholder
+        run: |
+          echo "Dry-run completed. If output looks correct, remove --dry-run flags and re-run to perform actual deploy."
