@@ -14,6 +14,8 @@ jobs:
       USER: ${{ secrets.HOSTINGER_USER }}
       PLUGINS_PATH: ${{ secrets.TARGET_PLUGINS_PATH }}
       THEMES_PATH: ${{ secrets.TARGET_THEMES_PATH }}
+      PLUGINS_PATH: /home/u689060721/domains/lightsteelblue-dolphin-977863.hostingersite.com/public_html/wp-content/plugins
+      THEMES_PATH: /home/u689060721/domains/lightsteelblue-dolphin-977863.hostingersite.com/public_html/wp-content/themes
       KEY_B64: ${{ secrets.HOSTINGER_SSH_KEY_B64 }}
       PORT_SECRET: ${{ secrets.HOSTINGER_SSH_PORT }}
 
