@@ -25,12 +25,12 @@ jobs:
       - name: Echo repo variables
         run: |
           echo "HOSTINGER_HOST: ${{ vars.HOSTINGER_HOST }}"
-          # If HOSTINGER_SSH_KEY_B64 is stored as a secret, use secrets instead:
-          # echo "HOSTINGER_SSH_KEY_B64: ${{ secrets.HOSTINGER_SSH_KEY_B64 }}"
-          echo "HOSTINGER_SSH_KEY_B64 is present (masked if secret)."
+          # If HOSTINGER_SSH_KEY is stored as a secret, use secrets instead:
+          # echo "HOSTINGER_SSH_KEY: ${{ secrets.HOSTINGER_SSH_KEY }}"
+          echo "HOSTINGER_SSH_KEY is present (masked if secret)."
         env:
           # If you stored the key as a secret, uncomment the next line and comment the vars line above
-          # HOSTINGER_SSH_KEY_B64: ${{ secrets.HOSTINGER_SSH_KEY_B64 }}
+          # HOSTINGER_SSH_KEY: ${{ secrets.HOSTINGER_SSH_KEY }}
           HOSTINGER_HOST: ${{ vars.HOSTINGER_HOST }}
-          HOSTINGER_SSH_KEY_B64: ${{ vars.HOSTINGER_SSH_KEY_B64 }}
+          HOSTINGER_SSH_KEY: ${{ vars.HOSTINGER_SSH_KEY }}
           HOSTINGER_SSH_KEY: ${{ vars.HOSTINGER_SSH_KEY }}

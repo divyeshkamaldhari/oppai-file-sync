@@ -13,7 +13,7 @@ jobs:
       # required secrets (still keep these as secrets in repo settings)
       HOST: ${{ secrets.HOSTINGER_HOST }}
       USER: ${{ secrets.HOSTINGER_USER }}
-      KEY_B64: ${{ secrets.HOSTINGER_SSH_KEY_B64 }}
+      KEY_B64: ${{ secrets.HOSTINGER_SSH_KEY }}
       PORT_SECRET: ${{ secrets.HOSTINGER_SSH_PORT }}
 
       # --- Hard-coded remote paths (replace with your actual absolute paths) ---
@@ -42,7 +42,7 @@ jobs:
       - name: Validate required secrets and compute SSH port
         run: |
           if [ -z "$KEY_B64" ]; then
-            echo "ERROR: HOSTINGER_SSH_KEY_B64 missing - add repo secret"
+            echo "ERROR: HOSTINGER_SSH_KEY missing - add repo secret"
             exit 1
           fi
           if [ -z "$HOST" ]; then
@@ -68,7 +68,7 @@ jobs:
           CLEAN_B64=$(printf '%s' "$KEY_B64" | tr -d '\r')
           # validate basic base64 characters
           if ! printf '%s' "$CLEAN_B64" | grep -Eq '^[A-Za-z0-9+/]+={0,2}$'; then
-            echo "ERROR: HOSTINGER_SSH_KEY_B64 is not valid base64. Recreate with: cat id_rsa | base64 | tr -d '\n'"
+            echo "ERROR: HOSTINGER_SSH_KEY is not valid base64. Recreate with: cat id_rsa | base64 | tr -d '\n'"
             exit 1
           fi
           printf '%s' "$CLEAN_B64" | base64 --decode > ~/.ssh/id_rsa
