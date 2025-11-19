@@ -9,18 +9,15 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    environment: staging 
+    # Use this only if you added secrets to GitHub Environment named exactly "staging"
+    # Remove this line if you are using repository-level secrets instead
+    environment: staging
+
     env:
-      REMOTE_HOST: ${{ secrets.HOSTINGER_HOST }} 
+      REMOTE_HOST: ${{ secrets.HOSTINGER_HOST }}
       REMOTE_USER: ${{ secrets.HOSTINGER_USER }}
       REMOTE_PLUGINS_PATH: ${{ secrets.TARGET_PLUGINS_PATH }}
       REMOTE_THEMES_PATH: ${{ secrets.TARGET_THEMES_PATH }}
-    runs: |
-      echo "HOSTINGER_HOST"
-      echo "HOSTINGER_USER"
-      echo "TARGET_PLUGINS_PATH"
-      echo "TARGET_THEMES_PATH"
-      
 
     steps:
       - name: Checkout repo
@@ -29,25 +26,35 @@ jobs:
           fetch-depth: 0
 
       - name: Install deps
-        run: sudo apt-get update && sudo apt-get install -y rsync openssh-client
+        run: sudo apt-get update && sudo apt-get install -y rsync openssh-client coreutils
 
-      - name: Configure SSH key (decode base64) and start ssh-agent
+      - name: Debug: print safe secret metadata (no raw secrets)
         run: |
-          set -e
+          echo "REMOTE_HOST (masked): $REMOTE_HOST"
+          echo "REMOTE_USER (masked): $REMOTE_USER"
+          echo "REMOTE_PLUGINS_PATH (masked): $REMOTE_PLUGINS_PATH"
+          echo "REMOTE_THEMES_PATH (masked): $REMOTE_THEMES_PATH"
+          # length and hash of base64 key (safe)
+          printf '%s' "${{ secrets.HOSTINGER_SSH_KEY_B64 }}" | wc -c | awk '{print "HOSTINGER_SSH_KEY_B64 length:", $1}'
+          printf '%s' "${{ secrets.HOSTINGER_SSH_KEY_B64 }}" | sha256sum | awk '{print "HOSTINGER_SSH_KEY_B64 sha256:", $1}'
+        shell: bash
+
+      - name: Configure SSH key (decode base64 -> id_rsa) and start ssh-agent
+        run: |
+          set -euo pipefail
           mkdir -p ~/.ssh
-          # decode base64 secret into private key file
-          echo "${{ secrets.HOSTINGER_SSH_KEY_B64 }}" | base64 --decode > ~/.ssh/id_rsa
+          printf '%s' "${{ secrets.HOSTINGER_SSH_KEY_B64 }}" | base64 --decode > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
-          # start ssh-agent and add key
           eval "$(ssh-agent -s)"
           ssh-add ~/.ssh/id_rsa
-          # add host fingerprint so SSH is non-interactive
-          ssh-keyscan -H "$REMOTE_HOST" >> ~/.ssh/known_hosts
-        # no env block needed because we use repository secrets directly
+          ssh-keyscan -H "$REMOTE_HOST" >> ~/.ssh/known_hosts || true
+          echo "SSH key decoded & loaded (private key not printed)."
+        shell: bash
 
       - name: Ensure remote target directories exist
         run: |
           ssh -o StrictHostKeyChecking=no $REMOTE_USER@$REMOTE_HOST "mkdir -p '${REMOTE_PLUGINS_PATH}' '${REMOTE_THEMES_PATH}'"
+        shell: bash
 
       - name: Rsync plugins folder (DRY-RUN)
         run: |
@@ -59,6 +66,7 @@ jobs:
             --exclude='wp-content/uploads' \
             ./wp-content/plugins/ \
             "$REMOTE_USER@$REMOTE_HOST:$REMOTE_PLUGINS_PATH/"
+        shell: bash
 
       - name: Rsync themes folder (DRY-RUN)
         run: |
@@ -70,7 +78,9 @@ jobs:
             --exclude='wp-content/uploads' \
             ./wp-content/themes/ \
             "$REMOTE_USER@$REMOTE_HOST:$REMOTE_THEMES_PATH/"
+        shell: bash
 
       - name: Post-deploy (permissions & cache flush) - DRY-RUN placeholder
         run: |
           echo "Dry-run completed. If output looks correct, remove --dry-run flags and re-run to perform actual deploy."
+        shell: bash
