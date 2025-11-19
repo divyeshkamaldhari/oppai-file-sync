@@ -1,4 +1,4 @@
-name: Deploy WP plugins & themes to Hostinger (rsync action)
+name: Deploy WP plugins & themes to Hostinger (rsync via SSH)
 
 on:
   push:
@@ -11,34 +11,52 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout repo
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Deploy plugins (dry-run)
-        uses: burnett01/rsync-deployments@v3
+      - name: Install rsync (if missing)
+        run: sudo apt-get update && sudo apt-get install -y rsync openssh-client
+
+      - name: Start ssh-agent and add key
+        uses: webfactory/ssh-agent@v0.8.1
         with:
-          switches: -avz --delete --dry-run --exclude='.git' --exclude='node_modules' --exclude='wp-config.php' --exclude='wp-content/uploads'
-          path: ./wp-content/plugins/
-          remote_host: ${{ secrets.HOSTINGER_HOST }}
-          remote_user: ${{ secrets.HOSTINGER_USER }}
-          remote_key: ${{ secrets.HOSTINGER_SSH_KEY }}
-          remote_path: ${{ secrets.TARGET_PLUGINS_PATH }}
+          ssh-private-key: ${{ secrets.HOSTINGER_SSH_KEY }}
 
-      - name: Deploy themes (dry-run)
-        uses: burnett01/rsync-deployments@v3
-        with:
-          switches: -avz --delete --dry-run --exclude='.git' --exclude='node_modules' --exclude='wp-config.php' --exclude='wp-content/uploads'
-          path: ./wp-content/themes/
-          remote_host: ${{ secrets.HOSTINGER_HOST }}
-          remote_user: ${{ secrets.HOSTINGER_USER }}
-          remote_key: ${{ secrets.HOSTINGER_SSH_KEY }}
-          remote_path: ${{ secrets.TARGET_THEMES_PATH }}
-
-      - name: If dry-run looks good, retry with real deploy (manual edit)
-        run: echo "If dry-run output looks good, remove --dry-run from switches and re-run."
-
-      - name: Fix ownership & flush cache (optional)
+      - name: Add host to known_hosts
         run: |
-          ssh -o StrictHostKeyChecking=no ${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }} "chown -R u689060721:u689060721 ${{ secrets.TARGET_PLUGINS_PATH }} || true; chown -R u689060721:u689060721 ${{ secrets.TARGET_THEMES_PATH }} || true; if command -v wp >/dev/null 2>&1; then wp cache flush --path=/home/u689060721/domains/lightsteelblue-dolphin-977863.hostingersite.com/public_html --allow-root || true; fi"
+          mkdir -p ~/.ssh
+          ssh-keyscan -H "${{ secrets.HOSTINGER_HOST }}" >> ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+
+      - name: Ensure remote target directories exist
+        run: |
+          ssh -o StrictHostKeyChecking=no ${ { secrets.HOSTINGER_USER } }@${{ secrets.HOSTINGER_HOST }} "mkdir -p '${{ secrets.TARGET_PLUGINS_PATH }}' '${{ secrets.TARGET_THEMES_PATH }}'"
+
+      - name: Rsync plugins folder (DRY-RUN)
+        run: |
+          echo "---- DRY RUN: Plugins ----"
+          rsync -avz --delete --dry-run \
+            --exclude='.git' \
+            --exclude='node_modules' \
+            --exclude='wp-config.php' \
+            --exclude='wp-content/uploads' \
+            ./wp-content/plugins/ \
+            "${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}:${{ secrets.TARGET_PLUGINS_PATH }}/"
+
+      - name: Rsync themes folder (DRY-RUN)
+        run: |
+          echo "---- DRY RUN: Themes ----"
+          rsync -avz --delete --dry-run \
+            --exclude='.git' \
+            --exclude='node_modules' \
+            --exclude='wp-config.php' \
+            --exclude='wp-content/uploads' \
+            ./wp-content/themes/ \
+            "${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }}:${{ secrets.TARGET_THEMES_PATH }}/"
+
+      - name: Confirm and run real deploy (manual step)
+        if: ${{ github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/staging' }}
+        run: |
+          echo "If the dry-run output looks good, re-run this workflow with the '--live' input or edit this file and remove --dry-run."
