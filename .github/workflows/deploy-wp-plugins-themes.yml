@@ -1,6 +1,5 @@
 name: Deploy WP plugins & themes to Hostinger
 
-# trigger manually or on push to staging branch
 on:
   push:
     branches:
@@ -10,6 +9,7 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
@@ -25,7 +25,6 @@ jobs:
           ssh-private-key: ${{ secrets.HOSTINGER_SSH_KEY }}
 
       - name: Add host to known_hosts
-        # Ensures ssh won't ask to confirm host key interactively
         run: |
           mkdir -p ~/.ssh
           ssh-keyscan -H "${{ secrets.HOSTINGER_HOST }}" >> ~/.ssh/known_hosts
@@ -60,13 +59,11 @@ jobs:
       - name: Set ownership & clear cache (optional)
         run: |
           ssh -o StrictHostKeyChecking=no ${{ secrets.HOSTINGER_USER }}@${{ secrets.HOSTINGER_HOST }} <<'SSH_CMDS'
-            # adjust user/group if different (www-data/nginx/apache)
-            chown -R u689060721:u689060721 /home/u689060721/domains/lightsteelblue-dolphin-977863.hostingersite.com/public_html/wp-content/plugins || true
-            chown -R u689060721:u689060721 /home/u689060721/domains/lightsteelblue-dolphin-977863.hostingersite.com/public_html/wp-content/themes || true
-            # if WP-CLI is available, flush cache (optional)
-            if command -v wp >/dev/null 2>&1; then
-              wp cache flush --path=/home/u689060721/domains/lightsteelblue-dolphin-977863.hostingersite.com/public_html --allow-root || true
-            fi
+chown -R u689060721:u689060721 /home/u689060721/domains/lightsteelblue-dolphin-977863.hostingersite.com/public_html/wp-content/plugins || true
+chown -R u689060721:u689060721 /home/u689060721/domains/lightsteelblue-dolphin-977863.hostingersite.com/public_html/wp-content/themes || true
+if command -v wp >/dev/null 2>&1; then
+  wp cache flush --path=/home/u689060721/domains/lightsteelblue-dolphin-977863.hostingersite.com/public_html --allow-root || true
+fi
 SSH_CMDS
 
       - name: Success Notification
