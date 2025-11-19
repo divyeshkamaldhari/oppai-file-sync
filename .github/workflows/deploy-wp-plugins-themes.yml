@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - staging
+      - Staging
   workflow_dispatch:
 
 jobs:
