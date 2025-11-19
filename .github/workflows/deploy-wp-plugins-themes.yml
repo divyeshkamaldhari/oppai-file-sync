@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - staging
-      - Staging
   workflow_dispatch:
 
 jobs:
@@ -25,25 +24,24 @@ jobs:
       - name: Install deps
         run: sudo apt-get update && sudo apt-get install -y rsync openssh-client
 
-      - name: Configure SSH key and ssh-agent (no external action)
+      - name: Configure SSH key (decode base64) and start ssh-agent
         run: |
           set -e
           mkdir -p ~/.ssh
-          # write private key from secret into id_rsa
-          echo "$SSH_KEY" > ~/.ssh/id_rsa
+          # decode base64 secret into private key file
+          echo "${{ secrets.HOSTINGER_SSH_KEY_B64 }}" | base64 --decode > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
           # start ssh-agent and add key
           eval "$(ssh-agent -s)"
           ssh-add ~/.ssh/id_rsa
-          # add known host so ssh won't prompt
+          # add host fingerprint so SSH is non-interactive
           ssh-keyscan -H "$REMOTE_HOST" >> ~/.ssh/known_hosts
-        env:
-          SSH_KEY: ${{ secrets.HOSTINGER_SSH_KEY }}
+        # no env block needed because we use repository secrets directly
 
       - name: Ensure remote target directories exist
         run: |
           ssh -o StrictHostKeyChecking=no $REMOTE_USER@$REMOTE_HOST "mkdir -p '${REMOTE_PLUGINS_PATH}' '${REMOTE_THEMES_PATH}'"
-      
+
       - name: Rsync plugins folder (DRY-RUN)
         run: |
           echo "---- DRY RUN: Plugins ----"
