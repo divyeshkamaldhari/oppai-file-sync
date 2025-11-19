@@ -1,13 +1,12 @@
-name: Deploy WP plugins & themes to Hostinger (dry-run by default, safe debug)
+name: Deploy WP plugins & themes to Hostinger (dry-run by default)
 
 on:
   push:
-    branches:
-      - staging
+    branches: [staging]
   workflow_dispatch:
     inputs:
       live:
-        description: 'Set to "true" to perform real deploy (default=false)'
+        description: 'Set to "true" to perform real deploy'
         required: false
         default: 'false'
 
@@ -15,107 +14,56 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
 
-    # Use repository-level secrets (preferred). Remove `environment:` if you don't use environment-scoped secrets.
-    # environment: staging
-
     env:
-      REMOTE_HOST: ${{ secrets.HOSTINGER_HOST }}
-      REMOTE_USER: ${{ secrets.HOSTINGER_USER }}
-      REMOTE_PLUGINS_PATH: ${{ secrets.TARGET_PLUGINS_PATH }}
-      REMOTE_THEMES_PATH: ${{ secrets.TARGET_THEMES_PATH }}
+      HOST: ${{ secrets.HOSTINGER_HOST }}
+      USER: ${{ secrets.HOSTINGER_USER }}
+      PLUGINS_PATH: ${{ secrets.TARGET_PLUGINS_PATH }}
+      THEMES_PATH: ${{ secrets.TARGET_THEMES_PATH }}
+      KEY_B64: ${{ secrets.HOSTINGER_SSH_KEY_B64 }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
-      - name: Install dependencies
+      - name: Install deps
         run: sudo apt-get update && sudo apt-get install -y rsync openssh-client coreutils
 
-      - name: Debug: ensure required secrets exist and print safe metadata
+      - name: Validate secrets present
         run: |
-          echo "Checking required secrets..."
-          if [ -z "${{ secrets.HOSTINGER_SSH_KEY_B64 }}" ]; then
-            echo "ERROR: secret HOSTINGER_SSH_KEY_B64 is missing or empty"
-            exit 1
-          fi
-          if [ -z "${{ secrets.HOSTINGER_HOST }}" ]; then
-            echo "ERROR: secret HOSTINGER_HOST is missing or empty"
-            exit 1
-          fi
-          if [ -z "${{ secrets.HOSTINGER_USER }}" ]; then
-            echo "ERROR: secret HOSTINGER_USER is missing or empty"
-            exit 1
-          fi
-          echo "HOSTINGER_HOST = ${{ secrets.HOSTINGER_HOST }}"
-          echo "HOSTINGER_USER = ${{ secrets.HOSTINGER_USER }}"
-          printf '%s' "${{ secrets.HOSTINGER_SSH_KEY_B64 }}" | wc -c | awk '{print "HOSTINGER_SSH_KEY_B64 length:", $1}'
-          printf '%s' "${{ secrets.HOSTINGER_SSH_KEY_B64 }}" | sha256sum | awk '{print "HOSTINGER_SSH_KEY_B64 sha256:", $1}'
-        shell: bash
+          if [ -z "$KEY_B64" ]; then echo "ERROR: HOSTINGER_SSH_KEY_B64 missing"; exit 1; fi
+          if [ -z "$HOST" ]; then echo "ERROR: HOSTINGER_HOST missing"; exit 1; fi
+          if [ -z "$USER" ]; then echo "ERROR: HOSTINGER_USER missing"; exit 1; fi
+          echo "Secrets look present (values masked)."
 
-      - name: Configure SSH key (decode base64 -> id_rsa) and start ssh-agent
+      - name: Write key and load ssh-agent
         run: |
-          set -euo pipefail
           mkdir -p ~/.ssh
-          # Decode base64 secret into private key
-          printf '%s' "${{ secrets.HOSTINGER_SSH_KEY_B64 }}" | base64 --decode > ~/.ssh/id_rsa
+          printf '%s' "$KEY_B64" | base64 --decode > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
-          # Start ssh-agent and add the key
           eval "$(ssh-agent -s)"
           ssh-add ~/.ssh/id_rsa
-          # Add host fingerprint for non-interactive SSH
-          ssh-keyscan -H "${{ secrets.HOSTINGER_HOST }}" >> ~/.ssh/known_hosts || true
-          echo "SSH key loaded and known_hosts updated."
-        shell: bash
+          ssh-keyscan -H "$HOST" >> ~/.ssh/known_hosts || true
 
-      - name: Ensure remote target directories exist
+      - name: Ensure remote dirs
+        run: ssh -o StrictHostKeyChecking=no "$USER@$HOST" "mkdir -p '$PLUGINS_PATH' '$THEMES_PATH'"
+
+      - name: Rsync plugins
         run: |
-          ssh -o StrictHostKeyChecking=no "${{ secrets.HOSTINGER_USER }}"@"${{ secrets.HOSTINGER_HOST }}" "mkdir -p '${{ secrets.TARGET_PLUGINS_PATH }}' '${{ secrets.TARGET_THEMES_PATH }}' && echo 'remote paths ensured'"
-        shell: bash
+          DRY_FLAG="--dry-run"
+          if [ "${{ github.event.inputs.live }}" = "true" ]; then DRY_FLAG=""; fi
+          rsync -avz --delete $DRY_FLAG --exclude='.git' --exclude='node_modules' --exclude='wp-config.php' --exclude='wp-content/uploads' ./wp-content/plugins/ "$USER@$HOST:$PLUGINS_PATH/"
 
-      - name: Rsync plugins (dry-run by default)
+      - name: Rsync themes
         run: |
-          if [ "${{ github.event.inputs.live }}" = "true" ]; then
-            DRY_FLAG=""
-            echo "Running REAL deploy for plugins."
-          else
-            DRY_FLAG="--dry-run"
-            echo "Running DRY-RUN for plugins."
-          fi
-          rsync -avz --delete $DRY_FLAG --exclude='.git' --exclude='node_modules' --exclude='wp-config.php' --exclude='wp-content/uploads' ./wp-content/plugins/ "${{ secrets.HOSTINGER_USER }}"@"${{ secrets.HOSTINGER_HOST }}":"${{ secrets.TARGET_PLUGINS_PATH }}/"
-        shell: bash
+          DRY_FLAG="--dry-run"
+          if [ "${{ github.event.inputs.live }}" = "true" ]; then DRY_FLAG=""; fi
+          rsync -avz --delete $DRY_FLAG --exclude='.git' --exclude='node_modules' --exclude='wp-config.php' --exclude='wp-content/uploads' ./wp-content/themes/ "$USER@$HOST:$THEMES_PATH/"
 
-      - name: Rsync themes (dry-run by default)
-        run: |
-          if [ "${{ github.event.inputs.live }}" = "true" ]; then
-            DRY_FLAG=""
-            echo "Running REAL deploy for themes."
-          else
-            DRY_FLAG="--dry-run"
-            echo "Running DRY-RUN for themes."
-          fi
-          rsync -avz --delete $DRY_FLAG --exclude='.git' --exclude='node_modules' --exclude='wp-config.php' --exclude='wp-content/uploads' ./wp-content/themes/ "${{ secrets.HOSTINGER_USER }}"@"${{ secrets.HOSTINGER_HOST }}":"${{ secrets.TARGET_THEMES_PATH }}/"
-        shell: bash
-
-      - name: Post-deploy tasks (only on live)
+      - name: Post-deploy (permissions) -- only on live
         if: ${{ github.event.inputs.live == 'true' }}
         run: |
-          ssh -o StrictHostKeyChecking=no "${{ secrets.HOSTINGER_USER }}"@"${{ secrets.HOSTINGER_HOST }}" <<'REMOTE_CMDS'
-          chown -R u689060721:u689060721 "${{ secrets.TARGET_PLUGINS_PATH }}" || true
-          chown -R u689060721:u689060721 "${{ secrets.TARGET_THEMES_PATH }}" || true
-          if command -v wp >/dev/null 2>&1; then
-            wp cache flush --path=/home/u689060721/domains/lightsteelblue-dolphin-977863.hostingersite.com/public_html --allow-root || true
-          fi
-          echo "Remote post-deploy tasks finished."
-REMOTE_CMDS
-        shell: bash
+          ssh -o StrictHostKeyChecking=no "$USER@$HOST" "chown -R u689060721:u689060721 '$PLUGINS_PATH' '$THEMES_PATH' || true; if command -v wp >/dev/null 2>&1; then wp cache flush --path=/home/u689060721/domains/lightsteelblue-dolphin-977863.hostingersite.com/public_html --allow-root || true; fi"
 
-      - name: Summary
+      - name: Finish
         run: |
-          if [ "${{ github.event.inputs.live }}" = "true" ]; then
-            echo "LIVE deployment executed."
-          else
-            echo "DRY-RUN completed. Re-run this workflow with input live=true to perform real deploy."
-          fi
-        shell: bash
+          if [ "${{ github.event.inputs.live }}" = "true" ]; then echo "LIVE deploy finished"; else echo "DRY-RUN finished"; fi
