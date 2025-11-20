@@ -1,29 +1,142 @@
-name: Deploy WP plugins & themes to Hostinger (staging - fixed remote paths)
+# name: Deploy WP plugins & themes to Hostinger (staging - fixed remote paths)
+
+# on:
+#   push:
+#     branches: [staging]
+#   workflow_dispatch:
+
+# jobs:
+#   deploy:
+#     runs-on: ubuntu-latest
+
+#     env:
+#       # required secrets (still keep these as secrets in repo settings)
+#       # HOST: ${{ secrets.HOSTINGER_HOST }}
+#       # USER: ${{ secrets.HOSTINGER_USER }}
+#       # KEY_B64: ${{ secrets.HOSTINGER_SSH_KEY }}
+#       # PORT_SECRET: ${{ secrets.HOSTINGER_SSH_PORT }}
+
+#       # --- Hard-coded remote paths (replace with your actual absolute paths) ---
+#       HOST: 109.106.254.234
+#       USER: u689060721
+#       KEY_B64: ${{ secrets.HOSTINGER_SSH_KEY }}
+#       PORT_SECRET: "65002"
+#       PLUGINS_PATH: /home/u689060721/domains/lightsteelblue-dolphin-977863.hostingersite.com/public_html/wp-content/plugins
+#       THEMES_PATH:  /home/u689060721/domains/lightsteelblue-dolphin-977863.hostingersite.com/public_html/wp-content/themes
+#       # ----------------------------------------------------------------------------
+
+#     steps:
+#       - name: Checkout repository
+#         uses: actions/checkout@v4
+#         with:
+#           fetch-depth: 0
+
+#       - name: Install required packages
+#         run: sudo apt-get update && sudo apt-get install -y rsync openssh-client coreutils
+
+#       - name: Show working dir files (verify repo content)
+#         run: |
+#           echo "Repo root contents:"
+#           ls -lah
+#           echo "wp-content/plugins (if present):"
+#           ls -lah ./wp-content/plugins || echo "no plugins folder"
+#           echo "wp-content/themes (if present):"
+#           ls -lah ./wp-content/themes || echo "no themes folder"
+
+#       - name: Validate required secrets and compute SSH port
+#         run: |
+#           if [ -z "$KEY_B64" ]; then
+#             echo "ERROR: HOSTINGER_SSH_KEY missing - add repo secret"
+#             exit 1
+#           fi
+#           if [ -z "$HOST" ]; then
+#             echo "ERROR: HOSTINGER_HOST missing - add repo secret"
+#             exit 1
+#           fi
+#           if [ -z "$USER" ]; then
+#             echo "ERROR: HOSTINGER_USER missing - add repo secret"
+#             exit 1
+#           fi
+#           # PLUGINS_PATH and THEMES_PATH are hard-coded above in env, so no secret required
+#           # default port
+#           PORT="${PORT_SECRET:-65002}"
+#           echo "SSH port set to: $PORT"
+#           echo "SSH_PORT=$PORT" >> $GITHUB_ENV
+#         shell: bash
+
+#       - name: Decode private key, load ssh-agent and add host key
+#         run: |
+#           set -euo pipefail
+#           mkdir -p ~/.ssh
+#           # sanitize/strip CRs then decode
+#           CLEAN_B64=$(printf '%s' "$KEY_B64" | tr -d '\r')
+#           # validate basic base64 characters
+#           if ! printf '%s' "$CLEAN_B64" | grep -Eq '^[A-Za-z0-9+/]+={0,2}$'; then
+#             echo "ERROR: HOSTINGER_SSH_KEY is not valid base64. Recreate with: cat id_rsa | base64 | tr -d '\n'"
+#             exit 1
+#           fi
+#           printf '%s' "$CLEAN_B64" | base64 --decode > ~/.ssh/id_rsa
+#           chmod 600 ~/.ssh/id_rsa
+#           eval "$(ssh-agent -s)"
+#           ssh-add ~/.ssh/id_rsa
+#           # record host key for custom port
+#           ssh-keyscan -p "$SSH_PORT" -H "$HOST" >> ~/.ssh/known_hosts || true
+#           echo "SSH key loaded and known_hosts updated for $HOST:$SSH_PORT"
+#         shell: bash
+
+#       - name: Ensure remote target directories exist
+#         run: |
+#           ssh -p "$SSH_PORT" -o StrictHostKeyChecking=no "$USER@$HOST" "mkdir -p '$PLUGINS_PATH' '$THEMES_PATH' && echo 'remote paths ensured'"
+#         shell: bash
+
+#       - name: Rsync plugins → remote (production copy)
+#         run: |
+#           RSYNC_SSH="ssh -p $SSH_PORT -o StrictHostKeyChecking=no"
+#           rsync -e "$RSYNC_SSH" -avz --delete \
+#             --exclude='.git' \
+#             --exclude='node_modules' \
+#             --exclude='wp-config.php' \
+#             --exclude='wp-content/uploads' \
+#             ./wp-content/plugins/ "$USER@$HOST:$PLUGINS_PATH/"
+#         shell: bash
+
+#       - name: Rsync themes → remote (production copy)
+#         run: |
+#           RSYNC_SSH="ssh -p $SSH_PORT -o StrictHostKeyChecking=no"
+#           rsync -e "$RSYNC_SSH" -avz --delete \
+#             --exclude='.git' \
+#             --exclude='node_modules' \
+#             --exclude='wp-config.php' \
+#             --exclude='wp-content/uploads' \
+#             ./wp-content/themes/ "$USER@$HOST:$THEMES_PATH/"
+#         shell: bash
+
+#       - name: Finalize & mark pipeline passed
+#         run: |
+#           echo "Plugins and themes successfully synced to $USER@$HOST"
+#           echo "Pipeline passed."
+#         shell: bash
+
+name: Deploy WP plugins & themes (staging / production)
 
 on:
   push:
-    branches: [staging]
+    branches: [staging, production]
   workflow_dispatch:
 
 jobs:
-  deploy:
+  deploy-wp:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
 
     env:
-      # required secrets (still keep these as secrets in repo settings)
-      # HOST: ${{ secrets.HOSTINGER_HOST }}
-      # USER: ${{ secrets.HOSTINGER_USER }}
-      # KEY_B64: ${{ secrets.HOSTINGER_SSH_KEY }}
-      # PORT_SECRET: ${{ secrets.HOSTINGER_SSH_PORT }}
-
-      # --- Hard-coded remote paths (replace with your actual absolute paths) ---
-      HOST: 109.106.254.234
-      USER: u689060721
+      # shared host/user/key (keep private key as base64 secret)
+      HOST: ${{ secrets.HOSTINGER_HOST }}
+      USER: ${{ secrets.HOSTINGER_USER }}
       KEY_B64: ${{ secrets.HOSTINGER_SSH_KEY }}
-      PORT_SECRET: "65002"
-      PLUGINS_PATH: /home/u689060721/domains/lightsteelblue-dolphin-977863.hostingersite.com/public_html/wp-content/plugins
-      THEMES_PATH:  /home/u689060721/domains/lightsteelblue-dolphin-977863.hostingersite.com/public_html/wp-content/themes
-      # ----------------------------------------------------------------------------
+      DEFAULT_SSH_PORT: ${{ secrets.HOSTINGER_DEFAULT_SSH_PORT }}
 
     steps:
       - name: Checkout repository
@@ -31,88 +144,128 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Install required packages
-        run: sudo apt-get update && sudo apt-get install -y rsync openssh-client coreutils
-
-      - name: Show working dir files (verify repo content)
+      - name: Determine branch and set branch-specific targets
+        id: branch_vars
         run: |
-          echo "Repo root contents:"
+          BRANCH="${GITHUB_REF#refs/heads/}"
+          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+
+          if [ "$BRANCH" = "staging" ]; then
+            PLUGINS_PATH="${{ secrets.HOSTINGER_STAGING_PLUGINS_PATH }}"
+            THEMES_PATH="${{ secrets.HOSTINGER_STAGING_THEMES_PATH }}"
+            SSH_PORT="${{ secrets.HOSTINGER_STAGING_SSH_PORT || env.DEFAULT_SSH_PORT }}"
+          elif [ "$BRANCH" = "production" ]; then
+            PLUGINS_PATH="${{ secrets.HOSTINGER_PRODUCTION_PLUGINS_PATH }}"
+            THEMES_PATH="${{ secrets.HOSTINGER_PRODUCTION_THEMES_PATH }}"
+            SSH_PORT="${{ secrets.HOSTINGER_PRODUCTION_SSH_PORT || env.DEFAULT_SSH_PORT }}"
+          else
+            echo "Unsupported branch: $BRANCH"
+            exit 1
+          fi
+
+          echo "plugins_path=$PLUGINS_PATH" >> "$GITHUB_OUTPUT"
+          echo "themes_path=$THEMES_PATH" >> "$GITHUB_OUTPUT"
+          echo "ssh_port=${SSH_PORT:-65002}" >> "$GITHUB_OUTPUT"
+
+      - name: Show repo contents (verify)
+        run: |
+          echo "Repo root:"
           ls -lah
           echo "wp-content/plugins (if present):"
           ls -lah ./wp-content/plugins || echo "no plugins folder"
           echo "wp-content/themes (if present):"
           ls -lah ./wp-content/themes || echo "no themes folder"
 
-      - name: Validate required secrets and compute SSH port
+      - name: Validate inputs & save SSH_PORT
         run: |
+          PLUGINS_PATH="${{ steps.branch_vars.outputs.plugins_path }}"
+          THEMES_PATH="${{ steps.branch_vars.outputs.themes_path }}"
+          SSH_PORT="${{ steps.branch_vars.outputs.ssh_port }}"
+
           if [ -z "$KEY_B64" ]; then
-            echo "ERROR: HOSTINGER_SSH_KEY missing - add repo secret"
+            echo "ERROR: HOSTINGER_SSH_KEY secret missing"
             exit 1
           fi
-          if [ -z "$HOST" ]; then
-            echo "ERROR: HOSTINGER_HOST missing - add repo secret"
+          if [ -z "${{ env.HOST }}" ]; then
+            echo "ERROR: HOSTINGER_HOST secret missing"
             exit 1
           fi
-          if [ -z "$USER" ]; then
-            echo "ERROR: HOSTINGER_USER missing - add repo secret"
+          if [ -z "${{ env.USER }}" ]; then
+            echo "ERROR: HOSTINGER_USER secret missing"
             exit 1
           fi
-          # PLUGINS_PATH and THEMES_PATH are hard-coded above in env, so no secret required
-          # default port
-          PORT="${PORT_SECRET:-65002}"
-          echo "SSH port set to: $PORT"
-          echo "SSH_PORT=$PORT" >> $GITHUB_ENV
+          if [ -z "$PLUGINS_PATH" ] || [ -z "$THEMES_PATH" ]; then
+            echo "ERROR: Branch-specific target paths are missing. Set HOSTINGER_*_PLUGINS_PATH and HOSTINGER_*_THEMES_PATH secrets."
+            exit 1
+          fi
+
+          echo "SSH_PORT=$SSH_PORT" >> $GITHUB_ENV
+          echo "Using target paths:"
+          echo "  plugins: $PLUGINS_PATH"
+          echo "  themes : $THEMES_PATH"
         shell: bash
 
-      - name: Decode private key, load ssh-agent and add host key
+      - name: Decode private key, load ssh-agent & add host key (robust)
         run: |
           set -euo pipefail
           mkdir -p ~/.ssh
-          # sanitize/strip CRs then decode
           CLEAN_B64=$(printf '%s' "$KEY_B64" | tr -d '\r')
-          # validate basic base64 characters
+
+          # basic base64 charset check
           if ! printf '%s' "$CLEAN_B64" | grep -Eq '^[A-Za-z0-9+/]+={0,2}$'; then
             echo "ERROR: HOSTINGER_SSH_KEY is not valid base64. Recreate with: cat id_rsa | base64 | tr -d '\n'"
             exit 1
           fi
+
           printf '%s' "$CLEAN_B64" | base64 --decode > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
+
           eval "$(ssh-agent -s)"
-          ssh-add ~/.ssh/id_rsa
-          # record host key for custom port
-          ssh-keyscan -p "$SSH_PORT" -H "$HOST" >> ~/.ssh/known_hosts || true
-          echo "SSH key loaded and known_hosts updated for $HOST:$SSH_PORT"
+          ssh-add ~/.ssh/id_rsa || { echo "ssh-add failed — ensure key format is supported and no passphrase"; exit 1; }
+
+          # ensure known host available on the chosen port
+          ssh-keyscan -p "$SSH_PORT" -H "${{ env.HOST }}" >> ~/.ssh/known_hosts || true
+
+          echo "SSH loaded (port=$SSH_PORT)."
         shell: bash
 
       - name: Ensure remote target directories exist
         run: |
-          ssh -p "$SSH_PORT" -o StrictHostKeyChecking=no "$USER@$HOST" "mkdir -p '$PLUGINS_PATH' '$THEMES_PATH' && echo 'remote paths ensured'"
+          PLUGINS_PATH="${{ steps.branch_vars.outputs.plugins_path }}"
+          THEMES_PATH="${{ steps.branch_vars.outputs.themes_path }}"
+          ssh -p "$SSH_PORT" -o StrictHostKeyChecking=no "${{ env.USER }}@${{ env.HOST }}" \
+            "mkdir -p '$PLUGINS_PATH' '$THEMES_PATH' && echo 'remote paths ensured'"
         shell: bash
 
-      - name: Rsync plugins → remote (production copy)
+      - name: Rsync plugins (branch-specific target)
         run: |
+          PLUGINS_PATH="${{ steps.branch_vars.outputs.plugins_path }}"
           RSYNC_SSH="ssh -p $SSH_PORT -o StrictHostKeyChecking=no"
           rsync -e "$RSYNC_SSH" -avz --delete \
             --exclude='.git' \
             --exclude='node_modules' \
             --exclude='wp-config.php' \
             --exclude='wp-content/uploads' \
-            ./wp-content/plugins/ "$USER@$HOST:$PLUGINS_PATH/"
+            ./wp-content/plugins/ "${{ env.USER }}@${{ env.HOST }}:$PLUGINS_PATH/"
         shell: bash
 
-      - name: Rsync themes → remote (production copy)
+      - name: Rsync themes (branch-specific target)
         run: |
+          THEMES_PATH="${{ steps.branch_vars.outputs.themes_path }}"
           RSYNC_SSH="ssh -p $SSH_PORT -o StrictHostKeyChecking=no"
           rsync -e "$RSYNC_SSH" -avz --delete \
             --exclude='.git' \
             --exclude='node_modules' \
             --exclude='wp-config.php' \
             --exclude='wp-content/uploads' \
-            ./wp-content/themes/ "$USER@$HOST:$THEMES_PATH/"
+            ./wp-content/themes/ "${{ env.USER }}@${{ env.HOST }}:$THEMES_PATH/"
         shell: bash
 
-      - name: Finalize & mark pipeline passed
+      - name: Finalize & cleanup
         run: |
-          echo "Plugins and themes successfully synced to $USER@$HOST"
-          echo "Pipeline passed."
+          echo "Deployment complete for branch: ${{ steps.branch_vars.outputs.branch }}"
+          # cleanup
+          ssh-add -D || true
+          shred -u ~/.ssh/id_rsa || rm -f ~/.ssh/id_rsa || true
+          echo "Done."
         shell: bash
